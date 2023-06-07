@@ -1,0 +1,7 @@
+saved chat and packet logs/stack traces
+non commands on server just send out a chat to everyone
+toggle chat
+print out chat history
+cat a file
+grep
+changedir
