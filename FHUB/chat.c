@@ -1,7 +1,7 @@
 /**
  * chat.c - a program to connect with a server application
  * author: Jason Heflinger
- * last modified: 6-6-2023
+ * last modified: 6-7-2023
 */
 
 // defines

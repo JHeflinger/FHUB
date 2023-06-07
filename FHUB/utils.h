@@ -1,7 +1,7 @@
 /**
  * utils.h - program helper functions for terminal output
  * author: Jason Heflinger
- * last modified: 6-6-2023
+ * last modified: 6-7-2023
 */
 
 // includes
@@ -75,7 +75,8 @@ void resetText() {
 /**
  * Given a buffer and the length of input to get,
  * will prompt the terminal to get an input and
- * copy it into the given buffer
+ * copy it into the given buffer. This function also
+ * removes the trailing newline character
 */
 void getInput(char* buf, int len) {
     fgets(buf, len, stdin);

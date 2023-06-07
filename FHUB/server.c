@@ -1,7 +1,7 @@
 /**
  * server.c - a program to take in client connections and manage them
  * author: Jason Heflinger
- * last modified: 6-6-2023
+ * last modified: 6-7-2023
 */
 
 // defines
@@ -37,6 +37,7 @@ int  g_initialized                     =   0  ;
 int  g_socket                          =   0  ;
 int  g_monitor                         =   0  ;
 int  g_shutdown                        =   0  ;
+int  g_talkEnabled                     =   0  ;
 
 // helper enum to describe packets
 enum PACKET_TYPE {
@@ -81,13 +82,13 @@ void initialize() {
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         setTextColor(RED);
-        printf("ERROR >> WSAStartup failed.\n");
+        printf("ERROR   >> WSAStartup failed.\n");
         resetText();
         exit(1);
     }else if (LOBYTE(wsaData.wVersion) != 2 ||
         HIBYTE(wsaData.wVersion) != 2) {
         setTextColor(RED);
-        printf("ERROR >> Version 2.2 of Winsock is not available.\n");
+        printf("ERROR   >> Version 2.2 of Winsock is not available.\n");
         resetText();
         WSACleanup();
         exit(2);
@@ -118,7 +119,7 @@ void hostConnection() {
     // check if program is initialized
     if (!g_initialized) {
         setTextColor(RED);
-        printf("ERROR >> hosting was attempted without initialization.\n");
+        printf("ERROR   >> hosting was attempted without initialization.\n");
         resetText();
         exit(3);
     }
@@ -131,7 +132,7 @@ void hostConnection() {
     int addrlen = sizeof(address);
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         setTextColor(RED);
-        printf("ERROR >> Socket creation error \n");
+        printf("ERROR   >> Socket creation error \n");
         resetText();
         exit(4);
     }
@@ -141,7 +142,7 @@ void hostConnection() {
     // Forcefully attaching socket to the desired port
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
         setTextColor(RED);
-        printf("ERROR >> failed to attach socket to port");
+        printf("ERROR   >> failed to attach socket to port");
         resetText();
         exit(5);
     }
@@ -150,7 +151,7 @@ void hostConnection() {
     address.sin_port = htons(g_port);
     if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
         setTextColor(RED);
-        printf("ERROR >> bind failed");
+        printf("ERROR   >> bind failed");
         resetText();
         exit(6);
     }
@@ -158,7 +159,7 @@ void hostConnection() {
     // start listening
     if (listen(server_fd, MAX_USERS) < 0) {
         setTextColor(RED);
-        printf("ERROR >> failed to listen");
+        printf("ERROR   >> failed to listen");
         resetText();
         exit(7);
     }
@@ -171,7 +172,7 @@ void hostConnection() {
     inputThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)handleInput, NULL, 0, NULL);
     if (inputThread == NULL) {
         setTextColor(RED);
-        printf("ERROR >> Failed to create new input thread.\n");
+        printf("ERROR   >> Failed to create new input thread.\n");
         resetText();
     }
 
@@ -180,7 +181,7 @@ void hostConnection() {
         int client_socket;
         if ((client_socket = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen)) < 0) {
             setTextColor(RED);
-            printf("ERROR >> failed to accept\n");
+            printf("ERROR   >> failed to accept\n");
             resetText();
             continue;
         } else {
@@ -191,7 +192,7 @@ void hostConnection() {
             clientThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)handleClient, client_socket, 0, NULL);
             if (clientThread == NULL) {
                 setTextColor(RED);
-                printf("ERROR >> Failed to create new client thread.\n");
+                printf("ERROR   >> Failed to create new client thread.\n");
                 resetText();
                 continue;
             }
@@ -206,7 +207,7 @@ void hostConnection() {
 */
 void disconnect() {
     setTextColor(YELLOW);
-    printf("SERVER >> Shutting down...\n");
+    printf("SERVER  >> Shutting down...\n");
     resetText();
     close(g_socket);
     for (int i = 0; i < g_clientIndex; i++)
@@ -251,13 +252,13 @@ void handleInput() {
 
         // proccess command
         if(g_buffer[0] == '/') {
-            printf("ADMIN >> %s\n", g_buffer);
+            printf("ADMIN   >> %s\n", g_buffer);
             char command[strlen(g_buffer) - 1];
             strcpy(command, g_buffer + 1);
             if (compareCommand(command, "monitor", 'm')) {
                 g_monitor = !g_monitor;
-                if (g_monitor) printf("SERVER >> monitoring toggled ON\n");
-                else printf("SERVER >> monitoring toggled OFF\n");
+                if (g_monitor) printf("SERVER  >> monitoring toggled ON\n");
+                else printf("SERVER  >> monitoring toggled OFF\n");
             } else if (compareCommand(command, "exit", 'e')) { // TODO: add confirmation check if users are online 
                 g_shutdown = TRUE;
                 disconnect();
@@ -267,16 +268,33 @@ void handleInput() {
                 "\n\t- [/help]    [/h]    prompts help output"
                 "\n\t- [/monitor] [/m]    toggles monitoring log on or off"
                 "\n\t- [/list]    [/l]    lists all files in the current directory"
+                "\n\t- [/talk]    [/t]    toggles chatting with connected clients"
                 "\n\t- [/exit]    [/e]    shuts down the application and disconnects all clients"
                 "\n\n"
                 "\nTHANK YOU FOR USING FHUB\n\n\n");
             } else if (compareCommand(command, "list", 'l')) {
                 listDirectory();
+            } else if (compareCommand(command, "talk", 't')) {
+                g_talkEnabled = !g_talkEnabled;
+                if (g_talkEnabled) printf("SERVER  >> talking toggled ON\n");
+                else printf("SERVER  >> talking toggled OFF\n");
             } else {
                 setTextColor(RED);
-                printf("SERVER >> Invalid command\n");
+                printf("SERVER  >> Invalid command\n");
                 resetText();
             }
+        } else if (g_talkEnabled) {
+            printf("ADMIN   >> %s\n", g_buffer);
+            char packet[PACKET_SIZE];
+            packet[0] = CHAT;
+            strcpy(packet + 1, "ADMIN>");
+            strcpy(packet + strlen(packet), g_buffer);
+            addChat(packet);
+            handlePacket(packet, g_socket);
+        } else {
+            setTextColor(YELLOW);
+            printf("SERVER  >> talking is not enabled!\n");
+            resetText();
         }
         
         // clear buffer
@@ -307,6 +325,17 @@ void handleClient(int socket_fd) {
 void handlePacket(char* buf, int socket_fd) {
     switch (buf[0]) {
         case CHAT:
+            if (g_talkEnabled && socket_fd != g_socket) {
+                char chat[PACKET_SIZE];
+                int index = 1;
+                for(index = 1; buf[index] != '>'; index++);
+                strcpy(chat, buf + 1);
+                strcpy(chat + index - 1, " >> ");
+                strcpy(chat + index + 3, buf + index + 1);
+                setTextColor(BLUE);
+                ASYNC_PRINT("CLIENT  >> %s\n", chat);
+                resetText();
+            }
             if (g_monitor) ASYNC_PRINT("MONITOR >> updating client chatrooms\n");
             for(int i = 0; i < g_clientIndex; i++) {
                 send(g_clients[i], buf, strlen(buf), 0);
@@ -376,7 +405,7 @@ void listDirectory() {
         DIR* directory = opendir(path);
         if (directory == NULL) {
             setTextColor(RED);
-            printf("ERROR >> failed to open directory\n");
+            printf("ERROR   >> failed to open directory\n");
             resetText();
             return;
         }
@@ -409,17 +438,17 @@ void listDirectory() {
         // directory doesn't exist
         if (strlen(g_relativePath) == 0) {
             setTextColor(YELLOW);
-            printf("SERVER >> No root directory detected. Creating a new directory...\n");
+            printf("SERVER  >> No root directory detected. Creating a new directory...\n");
             if (_mkdir(ROOT_DIR) == 0) {
                 setTextColor(GREEN);
-                printf("SERVER >> Root directory created!\n");
+                printf("SERVER  >> Root directory created!\n");
             } else {
                 setTextColor(RED);
-                printf("ERROR >> unable to create root directory\n");
+                printf("ERROR   >> unable to create root directory\n");
             }
         } else {
             setTextColor(RED);
-            printf("ERROR >> current directory does not exist\n");
+            printf("ERROR   >> current directory does not exist\n");
         }
         resetText();
     }
