@@ -1,7 +1,7 @@
 /**
  * server.c - a program to take in client connections and manage them
  * author: Jason Heflinger
- * last modified: 6-7-2023
+ * last modified: 6-8-2023
 */
 
 // defines
@@ -46,17 +46,22 @@ enum PACKET_TYPE {
 };
 
 // function declarations
-void initialize(void);
-void hostConnection(void);
-void disconnect(void);
-void handleInput(void);
-void handleClient(int socket_fd);
-void addUser(int socket_fd);
-void addChat(char* chat);
-void handlePacket(char* buf, int socket_fd);
-int  compareCommand(char* buffer, char* command, char shortcut);
-void disconnectClient(int socket_fd);
-void listDirectory(void);
+void  initialize(void);
+void  hostConnection(void);
+void  disconnect(void);
+void  handleInput(void);
+void  handleClient(int socket_fd);
+void  addUser(int socket_fd);
+void  addChat(char* chat);
+void  handlePacket(char* buf, int socket_fd);
+int   compareCommand(char* buffer, char* command, char* shortcut);
+void  disconnectClient(int socket_fd);
+void  listDirectory(void);
+void  readFile(char* arg);
+int   confirmArgs(int numArgs, int desiredArgs);
+void  createItem(char* flag, char* name);
+void  changeDirectory(char* directory);
+void  getWorkingDir(char* path);
 
 /**
  * prints out non blocking using intermediate input buffer
@@ -104,7 +109,9 @@ void initialize() {
         memcpy(portStr, DEFAULT_PORT, 6);
     g_port = atoi(portStr);
     if (g_port <= 1024) {
+        setTextColor(YELLOW);
         printf("WARNING: Indicated port is either invalid or reserved. Defaulting to %s\n", DEFAULT_PORT);
+        resetText();
         g_port = atoi(DEFAULT_PORT);
     }
 
@@ -221,6 +228,11 @@ void disconnect() {
 */
 void handleInput() {
     while(!g_shutdown) {
+        // print precursor
+        if (strlen(g_relativePath) == 0) {
+            printf("R:> ");
+        } else printf("R:/%s> ", g_relativePath);
+
         int index = 0;
         char curr = 0;
 
@@ -231,9 +243,13 @@ void handleInput() {
                 curr = getch();
 
                 // update the input buffer and print out the typed input
-                g_buffer[index++] = curr;
-                printf("%c", curr);
-                if (curr == '\b') printf(" \b"); // compensate for backspaces
+                if (curr == '\b') {
+                    g_buffer[--index] = '\0';
+                    printf("\b \b");
+                } else {
+                    g_buffer[index++] = curr;
+                    printf("%c", curr);
+                }
             }
         } while (curr != '\r' && curr != '\n'); //loop until carriage return or newline
 
@@ -254,30 +270,90 @@ void handleInput() {
         if(g_buffer[0] == '/') {
             printf("ADMIN   >> %s\n", g_buffer);
             char command[strlen(g_buffer) - 1];
+
+            //parse args
             strcpy(command, g_buffer + 1);
-            if (compareCommand(command, "monitor", 'm')) {
-                g_monitor = !g_monitor;
-                if (g_monitor) printf("SERVER  >> monitoring toggled ON\n");
-                else printf("SERVER  >> monitoring toggled OFF\n");
-            } else if (compareCommand(command, "exit", 'e')) { // TODO: add confirmation check if users are online 
-                g_shutdown = TRUE;
-                disconnect();
-            } else if (compareCommand(command, "help", 'h')) {
-                printf("\nFHUB (SERVER) VERSION 0.0.1\n\n"
-                "COMMANDS: "
-                "\n\t- [/help]    [/h]    prompts help output"
-                "\n\t- [/monitor] [/m]    toggles monitoring log on or off"
-                "\n\t- [/list]    [/l]    lists all files in the current directory"
-                "\n\t- [/talk]    [/t]    toggles chatting with connected clients"
-                "\n\t- [/exit]    [/e]    shuts down the application and disconnects all clients"
-                "\n\n"
-                "\nTHANK YOU FOR USING FHUB\n\n\n");
-            } else if (compareCommand(command, "list", 'l')) {
-                listDirectory();
-            } else if (compareCommand(command, "talk", 't')) {
-                g_talkEnabled = !g_talkEnabled;
-                if (g_talkEnabled) printf("SERVER  >> talking toggled ON\n");
-                else printf("SERVER  >> talking toggled OFF\n");
+            while(command[strlen(command) - 1] == ' ') command[strlen(command) - 1] = '\0';
+            int numargs = 1;
+            int inquotes = FALSE;
+            for(int i = 0; i < strlen(command); i++) {
+                if (command[i] == ' ' && !inquotes)
+                    numargs++;
+                else if (command[i] == '"')
+                    inquotes = !inquotes;
+            }
+            char args[numargs][strlen(command)];
+            char arg[strlen(command)];
+            int argindex = 0;
+            int argsindex = 0;
+            inquotes = FALSE;
+            for(int i = 0; i < strlen(command); i++) {
+                if (command[i] == ' ' && !inquotes) {
+                    arg[argindex] = '\0';
+                    argindex = 0;
+                    strcpy(args[argsindex], arg);
+                    memset(arg, '\0', strlen(command));
+                    argsindex++;
+                } else if (command[i] == '"') {
+                    inquotes = !inquotes;
+                } else {
+                    arg[argindex] = command[i];
+                    argindex++;
+                }
+            }
+            arg[argindex] = '\0';
+            strcpy(args[argsindex], arg);
+
+            if (compareCommand(args[0], "monitor", "m")) {
+                if (confirmArgs(numargs, 1)) {
+                    g_monitor = !g_monitor;
+                    if (g_monitor) printf("SERVER  >> monitoring toggled ON\n");
+                    else printf("SERVER  >> monitoring toggled OFF\n");
+                }
+            } else if (compareCommand(args[0], "exit", "e")) { // TODO: add confirmation check if users are online 
+                if (confirmArgs(numargs, 1)) {
+                    g_shutdown = TRUE;
+                    disconnect();
+                }
+            } else if (compareCommand(args[0], "help", "h")) {
+                if (confirmArgs(numargs, 1)) {
+                    printf("\nFHUB (SERVER) VERSION 0.0.1\n\n"
+                    "COMMANDS: "
+                    "\n\t- [/help]       prompts help output"
+                    "\n\t- [/monitor]    toggles monitoring log on or off"
+                    "\n\t- [/list]       lists all files in the current directory"
+                    "\n\t- [/talk]       toggles chatting with connected clients"
+                    "\n\t- [/exit]       shuts down the application and disconnects all clients"
+                    "\n"
+                    "\n\t- [/read] <filename>          reads a file and outputs its contents to the terminal"
+                    "\n\t- [/changedir] <dir>          changes working directory to the specified directory"
+                    "\n"
+                    "\n\t- [/create] <flag> <name>     creates a file or directory (-f for file or -d for directory)"
+                    "\n\n"
+                    "\nTHANK YOU FOR USING FHUB\n\n\n");
+                }
+            } else if (compareCommand(args[0], "list", "l")) {
+                if (confirmArgs(numargs, 1)) {
+                    listDirectory();
+                }
+            } else if (compareCommand(args[0], "talk", "t")) {
+                if (confirmArgs(numargs, 1)) {
+                    g_talkEnabled = !g_talkEnabled;
+                    if (g_talkEnabled) printf("SERVER  >> talking toggled ON\n");
+                    else printf("SERVER  >> talking toggled OFF\n");
+                }
+            } else if (compareCommand(args[0], "read", "r")) {
+                if (confirmArgs(numargs, 2)) {
+                    readFile(args[1]);
+                }
+            } else if (compareCommand(args[0], "create", "c")) {
+                if (confirmArgs(numargs, 3)) {
+                    createItem(args[1], args[2]);
+                }
+            } else if (compareCommand(args[0], "changedir", "cd")) {
+                if (confirmArgs(numargs, 2)) {
+                    changeDirectory(args[1]);
+                }
             } else {
                 setTextColor(RED);
                 printf("SERVER  >> Invalid command\n");
@@ -299,6 +375,41 @@ void handleInput() {
         
         // clear buffer
         memset(g_buffer, '\0', BUFFER_SIZE);
+    }
+}
+
+/**
+ * Creates a folder or directory given a flag
+ * and a name
+*/
+void createItem(char* flag, char* name) {
+    char path[MAX_PATH_SIZE];
+    getWorkingDir(path);
+    path[strlen(path)] = '/';
+    strcpy(path + strlen(path), name);
+
+    if (strcmp(flag, "-f") == 0) {
+        FILE *file;
+        file = fopen(path, "w");
+        if (file == NULL) {
+            setTextColor(RED);
+            printf("ERROR   >> unable to create file\n");
+            resetText();
+            return;
+        }
+        fclose(file);
+    } else if (strcmp(flag, "-d") == 0) {
+        int result = mkdir(path);
+        if (result == -1) {
+            setTextColor(RED);
+            printf("ERROR   >> unable to create directory\n");
+            resetText();
+            return;
+        }
+    } else {
+        setTextColor(RED);
+        printf("ERROR   >> invalid use of create. Usage is [/create] <flag> <name>. see [/help] for more information.\n");
+        resetText();
     }
 }
 
@@ -385,20 +496,128 @@ void addUser(int socket_fd) {
 /**
  * compares a given buffer to a command and it's respective shortcut
 */
-int compareCommand(char* buffer, char* command, char shortcut) {
-    int singleton = (strlen(buffer) == 1 || buffer[1] == ' ');
-    return (strcmp(buffer, command) == 0 || (singleton && buffer[0] == shortcut));
+int compareCommand(char* buffer, char* command, char* shortcut) {
+    return (strcmp(buffer, command) == 0 || strcmp(buffer, shortcut) == 0);
+}
+
+/**
+ * compares arguments and prints out error if false, and returns whether
+ * number of arguments were valid or not.
+*/
+int confirmArgs(int numArgs, int desiredArgs) {
+    if (numArgs != desiredArgs) {
+        setTextColor(RED);
+        printf("ERROR   >> Invalid use of command. Received %d arguments, should've received %d.\n", numArgs - 1, desiredArgs - 1);
+        resetText();
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * Changes the working directory to the specified directory
+*/
+void changeDirectory(char* directory) {
+    //if (directory[0] == '.' && directory[1] == '.') {
+    //    if (strlen(g_relativePath) <= 0) {
+    //       setTextColor(RED);
+    //        printf("ERROR   >> Cannot go back further than the root directory\n");
+    //        resetText();
+    //    } 
+    //}
+    char path[MAX_PATH_SIZE];
+    getWorkingDir(path);
+
+    //parse steps
+    while(directory[strlen(directory) - 1] == '/' || directory[strlen(directory) - 1] == '\\') directory[strlen(directory) - 1] = '\0'; // get rid of trailing slashes
+    while(directory[0] == '/' || directory[0] == '\\') strcpy(directory, directory + 1); // get rid of forward slashes
+    int numsteps = 1;
+    for(int i = 0; i < strlen(directory); i++)
+        if (directory[i] == '/' || directory[i] == '\\')
+            numsteps++;
+    char steps[numsteps][strlen(directory)];
+    char step[strlen(directory)];
+    int stepindex = 0;
+    int stepsindex = 0;
+    for(int i = 0; i < strlen(directory); i++) {
+        if (directory[i] == '/' || directory[i] == '\\') {
+            step[stepindex] = '\0';
+            stepindex = 0;
+            strcpy(steps[stepsindex], step);
+            memset(step, '\0', strlen(directory));
+            stepsindex++;
+        } else step[stepindex++] = directory[i];
+    }
+    step[stepindex] = '\0';
+    strcpy(steps[stepsindex], step);
+
+    // construct complete path
+    for(int i = 0; i < numsteps; i++) {
+        if (strcmp(steps[i], "..") == 0) {
+            if (strlen(path) != strlen(ROOT_DIR)) {
+                while (path[strlen(path) - 1] != '/' && path[strlen(path) - 1] != '\\') path[strlen(path) - 1] = '\0'; // delete step
+                path[strlen(path) - 1] = '\0'; // get rid of trailing slash
+            } else {
+                setTextColor(RED);
+                printf("ERROR   >> Cannot go back further than the root directory\n");
+                resetText();
+                return;
+            }
+        } else {
+            int pathlen = strlen(path);
+            path[pathlen] = '/';
+            strcpy(path + pathlen + 1, steps[i]);
+        }
+    }
+
+    // validate directory exists
+    DIR *dir = opendir(path);
+    if (dir) closedir(dir);
+    else {
+        setTextColor(RED);
+        printf("ERROR   >> Directory does not exist or is not accessible\n");
+        resetText();
+        return;
+    }
+
+    // make path the g_relative path
+    strcpy(g_relativePath, path + strlen(ROOT_DIR) + 1);
+}
+
+/**
+ * Reads from a specified file and outputs it to the terminal
+*/
+void readFile(char* arg) {
+    //construct path
+    char path[MAX_PATH_SIZE];
+    getWorkingDir(path);
+    path[strlen(path)] = '/';
+    strcpy(path + strlen(path), arg);
+
+    FILE *file;
+    char ch;
+    file = fopen(path, "r");
+    if (file == NULL) {
+        setTextColor(RED);
+        printf("ERROR   >> File could not be opened or could not be found\n");
+        resetText();
+        return;
+    }
+
+    do {
+        ch = fgetc(file);
+        putchar(ch);
+
+    } while(ch != EOF);
+    printf("\n");
+    fclose(file);
 }
 
 void listDirectory() {
     //construct path
-    char path[strlen(ROOT_DIR) + 1 + strlen(g_relativePath)];
-    strcpy(path, ROOT_DIR);
-    if (strlen(g_relativePath) > 0) {
-        path[strlen(ROOT_DIR) + 1] = '/';
-        memcpy(path + strlen(ROOT_DIR) + 1, g_relativePath, strlen(g_relativePath));
-        path[strlen(ROOT_DIR) + 2 + strlen(g_relativePath)] = '\0';
-    }
+    char path[MAX_PATH_SIZE];
+    getWorkingDir(path);
+    printf("path: %s\n", path);
 
     struct stat sb;
     if (stat(path, &sb) == 0 && S_ISDIR(sb.st_mode)) {
@@ -451,5 +670,18 @@ void listDirectory() {
             printf("ERROR   >> current directory does not exist\n");
         }
         resetText();
+    }
+}
+
+/**
+ * gets the working directory and copies it into
+ * the given path pointer
+*/
+void getWorkingDir(char* path) {
+    strcpy(path, ROOT_DIR);
+    if (strlen(g_relativePath) > 0) {
+        path[strlen(ROOT_DIR) + 1] = '/';
+        memcpy(path + strlen(ROOT_DIR) + 1, g_relativePath, strlen(g_relativePath));
+        path[strlen(ROOT_DIR) + 2 + strlen(g_relativePath)] = '\0';
     }
 }

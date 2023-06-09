@@ -297,7 +297,7 @@ void* updateInput(void* arg) {
                 printf("\nFHUB (CLIENT) VERSION 0.0.1\n\n"
                 "COMMANDS: "
                 "\n\t- [/help]    [/h]    prompts help output"
-                "\n\t- [/exit]    [/e]    shuts down the application and disconnects all clients"
+                "\n\t- [/exit]    [/e]    shuts down the application and disconnects the client"
                 "\n\n"
                 "\nTHANK YOU FOR USING FHUB\n\n\n");
             } else {

@@ -1,4 +1,7 @@
 saved chat and packet logs/stack traces
-cat a file
 grep
 changedir
+cut copy and paste files
+absolute pathing
+renameing failes and foldesr
+all TODOs
